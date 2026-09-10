@@ -1,0 +1,26 @@
+{
+  "name": "ai-teacher-avatar-demo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "精致半写实女性 AI 教师交互演示 —— React + Three.js 统一控制架构 PoC",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "download-avatar": "node scripts/download-avatar.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8"
+  }
+}

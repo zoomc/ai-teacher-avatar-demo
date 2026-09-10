@@ -1,0 +1,236 @@
+:root {
+  --bg: #0e1015;
+  --panel: #161923;
+  --panel-2: #1c202d;
+  --border: #262b3a;
+  --text: #e8eaf0;
+  --muted: #8a91a5;
+  --accent: #4f8cff;
+  --accent-2: #7c5cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- 舞台 */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.avatar-scene {
+  position: absolute;
+  inset: 0;
+}
+
+.avatar-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.scene-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(14, 16, 21, 0.72);
+  backdrop-filter: blur(2px);
+  z-index: 2;
+}
+
+.scene-progress {
+  width: min(320px, 70%);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.scene-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.2s ease;
+}
+
+.scene-overlay-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.scene-overlay-error {
+  max-width: 80%;
+  padding: 14px 18px;
+  border: 1px solid #5a2f3a;
+  border-radius: 8px;
+  background: #24161b;
+  color: #ffb4c0;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.status-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(18, 21, 30, 0.82);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  color: var(--muted);
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- 面板 */
+.panel {
+  flex: 0 0 340px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.panel-sub {
+  margin: -10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+
+.ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ctrl-group h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.ctrl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.ctrl-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 8px 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.05s;
+  text-align: center;
+}
+
+.ctrl-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #232a3d;
+}
+
+.ctrl-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ctrl-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ctrl-btn.primary {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  font-weight: 600;
+}
+
+.ctrl-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.caps-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.log-area {
+  height: 150px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #0d0f15;
+  font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.log-line {
+  color: #b9c2d6;
+  word-break: break-all;
+}

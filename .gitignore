@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+
+# 模型资产：许可证禁止直接再分发，只保留自动下载脚本。
+# 运行 `npm run download-avatar` 后会生成 public/models/avatar.glb
+public/models/*.glb
+public/models/*.vrm
+public/models/*.gltf
+
+# logs / editor
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# 凭证
+.env
+.env.*
+*.pem
+*.key

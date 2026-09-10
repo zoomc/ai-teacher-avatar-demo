@@ -1,0 +1,164 @@
+name: release
+
+# AI Teacher Avatar Demo 部署 workflow。
+# 模式与 zoomc/open-speak-teacher 的 release.yml 一致：
+#   构建静态前端 → rsync 到阿里云 ECS → 不可变 release 目录 + current 软链
+#   → 安装 nginx 子目录 location → nginx -t && reload → 公网 smoke test。
+# 可被 zoomlab-web 的包装 workflow（workflow_call）调用，由调用方传入 ECS 凭据。
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Demo commit, branch, or tag to build'
+        required: true
+        default: main
+        type: string
+      deploy_production:
+        description: 'Deploy the built artifact to the shared production host'
+        required: true
+        default: false
+        type: boolean
+      release_root:
+        description: 'Remote release root'
+        required: true
+        default: /opt/ai-teacher-demo
+        type: string
+      public_url:
+        description: 'Public site origin used for the smoke test'
+        required: true
+        default: https://zoomlab.top
+        type: string
+      site_path:
+        description: 'Public site subdirectory path (leading/trailing slashes)'
+        required: true
+        default: /ai-teacher-demo/
+        type: string
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      deploy_production:
+        required: true
+        type: boolean
+      release_root:
+        required: true
+        type: string
+      public_url:
+        required: true
+        type: string
+      site_path:
+        required: true
+        type: string
+    secrets:
+      ALIYUN_PRODUCTION_HOST:
+        required: true
+      ALIYUN_DEPLOY_KEY:
+        required: true
+      ALIYUN_DEPLOY_USER:
+        required: false
+
+permissions:
+  contents: read
+
+# 部署不可被更新的请求取消
+concurrency:
+  group: ai-teacher-demo-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ inputs.deploy_production == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Resolve source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Build frontend (download avatar -> vite build)
+        run: |
+          npm ci
+          npm run download-avatar
+          npm run build
+
+      - name: Validate deployment inputs
+        env:
+          DEPLOY_HOST: ${{ secrets.ALIYUN_PRODUCTION_HOST || vars.ALIYUN_PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ secrets.ALIYUN_DEPLOY_USER || 'admin' }}
+          DEPLOY_KEY: ${{ secrets.ALIYUN_DEPLOY_KEY }}
+          RELEASE_ROOT: ${{ vars.ALIYUN_RELEASE_ROOT || inputs.release_root }}
+          PUBLIC_URL: ${{ vars.ALIYUN_PRODUCTION_URL || inputs.public_url }}
+          SITE_PATH: ${{ vars.ALIYUN_SITE_PATH || inputs.site_path }}
+        run: |
+          test -n "$DEPLOY_HOST" -a -n "$DEPLOY_USER" -a -n "$DEPLOY_KEY" -a -n "$RELEASE_ROOT" -a -n "$PUBLIC_URL" -a -n "$SITE_PATH"
+          case "$SITE_PATH" in /*/) ;; *) echo "SITE_PATH must be /foo/"; exit 1 ;; esac
+
+      - name: Stage nginx site location
+        env:
+          RELEASE_ROOT: ${{ vars.ALIYUN_RELEASE_ROOT || inputs.release_root }}
+          SITE_PATH: ${{ vars.ALIYUN_SITE_PATH || inputs.site_path }}
+        run: |
+          set -eu
+          mkdir -p release/host
+          SITE_NO_SLASH="${SITE_PATH%/}"
+          cat > release/host/ai-teacher-demo-site.conf <<'EOF'
+# AI Teacher Avatar Demo static site subdirectory (managed by release workflow)
+location = __SITE_NO_SLASH__ { return 301 __SITE_PATH__; }
+location __SITE_PATH__ {
+    alias __RELEASE_ROOT__/web/current/;
+    index index.html;
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' https: wss:; manifest-src 'self'; form-action 'self'" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    try_files $uri $uri/ __SITE_PATH__index.html;
+}
+EOF
+          sed -i "s|__SITE_NO_SLASH__|$SITE_NO_SLASH|g; s|__SITE_PATH__|$SITE_PATH|g; s|__RELEASE_ROOT__|$RELEASE_ROOT|g" release/host/ai-teacher-demo-site.conf
+          cat release/host/ai-teacher-demo-site.conf
+
+      - name: Install SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.ALIYUN_DEPLOY_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Deploy immutable release
+        env:
+          DEPLOY_HOST: ${{ secrets.ALIYUN_PRODUCTION_HOST || vars.ALIYUN_PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ secrets.ALIYUN_DEPLOY_USER || 'admin' }}
+          RELEASE_ROOT: ${{ vars.ALIYUN_RELEASE_ROOT || inputs.release_root }}
+          RELEASE_ID: ${{ steps.source.outputs.sha }}
+          REMOTE_TMP: /tmp/ai-teacher-demo-release-${{ steps.source.outputs.sha }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" "install -d -m 755 $REMOTE_TMP/web $REMOTE_TMP/host"
+          rsync -az --delete -e "ssh -o StrictHostKeyChecking=accept-new" dist/ "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_TMP/web/"
+          rsync -az -e "ssh -o StrictHostKeyChecking=accept-new" release/host/ "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_TMP/host/"
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" "set -eu; sudo install -d -m 755 $RELEASE_ROOT/releases/$RELEASE_ID/web $RELEASE_ROOT/web; sudo rsync -az --delete $REMOTE_TMP/web/ $RELEASE_ROOT/releases/$RELEASE_ID/web/; sudo ln -sfn $RELEASE_ROOT/releases/$RELEASE_ID/web $RELEASE_ROOT/web/current; sudo install -m 0644 $REMOTE_TMP/host/ai-teacher-demo-site.conf /etc/nginx/conf.d/ai-teacher-demo-site.conf; if ! sudo grep -q 'conf.d' /etc/nginx/nginx.conf; then echo 'WARN: /etc/nginx/nginx.conf does not include conf.d; site location will not load'; fi; sudo nginx -t; sudo systemctl reload nginx"
+
+      - name: Public smoke test (content check, not just status)
+        env:
+          PUBLIC_URL: ${{ vars.ALIYUN_PRODUCTION_URL || inputs.public_url }}
+          SITE_PATH: ${{ vars.ALIYUN_SITE_PATH || inputs.site_path }}
+        run: |
+          code=$(curl --connect-timeout 10 --max-time 60 -s -o /tmp/ai-teacher-demo-index.html -w '%{http_code}' "$PUBLIC_URL$SITE_PATH")
+          echo "HTTP $code from $PUBLIC_URL$SITE_PATH"
+          test "$code" = 200
+          grep -q "AI Teacher Avatar Demo" /tmp/ai-teacher-demo-index.html
+          asset=$(grep -o 'assets/index-[^"]*\.js' /tmp/ai-teacher-demo-index.html | head -1)
+          echo "bundle: $asset"
+          code2=$(curl --connect-timeout 10 --max-time 60 -s -o /dev/null -w '%{http_code}' "$PUBLIC_URL$SITE_PATH$asset")
+          test "$code2" = 200
