@@ -74,7 +74,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: zoomc/ai-teacher-avatar-demo
           ref: ${{ inputs.source_ref }}
+          token: ${{ github.token }}
           fetch-depth: 0
 
       - name: Resolve source commit
@@ -83,7 +85,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Build frontend (download avatar -> vite build)
