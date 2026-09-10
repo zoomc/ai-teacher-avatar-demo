@@ -112,20 +112,7 @@ jobs:
           set -eu
           mkdir -p release/host
           SITE_NO_SLASH="${SITE_PATH%/}"
-          cat > release/host/ai-teacher-demo-site.conf <<'EOF'
-# AI Teacher Avatar Demo static site subdirectory (managed by release workflow)
-location = __SITE_NO_SLASH__ { return 301 __SITE_PATH__; }
-location __SITE_PATH__ {
-    alias __RELEASE_ROOT__/web/current/;
-    index index.html;
-    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' https: wss:; manifest-src 'self'; form-action 'self'" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    try_files $uri $uri/ __SITE_PATH__index.html;
-}
-EOF
-          sed -i "s|__SITE_NO_SLASH__|$SITE_NO_SLASH|g; s|__SITE_PATH__|$SITE_PATH|g; s|__RELEASE_ROOT__|$RELEASE_ROOT|g" release/host/ai-teacher-demo-site.conf
+          sed "s|__SITE_NO_SLASH__|$SITE_NO_SLASH|g; s|__SITE_PATH__|$SITE_PATH|g; s|__RELEASE_ROOT__|$RELEASE_ROOT|g" deploy/ai-teacher-demo-site.conf > release/host/ai-teacher-demo-site.conf
           cat release/host/ai-teacher-demo-site.conf
 
       - name: Install SSH key
