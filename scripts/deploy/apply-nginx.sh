@@ -11,18 +11,22 @@
 set -eu
 
 REMOTE_TMP="${1:?usage: apply-nginx.sh <remote_tmp_dir>}"
-SITE_CONF="/etc/nginx/conf.d/ai-teacher-demo-site.conf"
-INCLUDE_LINE='include /etc/nginx/conf.d/ai-teacher-demo-site.conf;'
+SITE_CONF="/etc/nginx/ai-teacher-demo-site.conf"
+INCLUDE_LINE='include /etc/nginx/ai-teacher-demo-site.conf;'
 TOOL="/usr/local/sbin/ai-teacher-demo-ensure-nginx-include"
 
 # 1) 停用 site conf，恢复 nginx 健康
+#    注意：location 文件绝不能放 /etc/nginx/conf.d/ —— 该目录被 http 级 include，
+#    location 在 http 上下文非法。放 /etc/nginx/ 根目录，仅由 server block 内 include。
 sudo rm -f "$SITE_CONF"
+sudo rm -f /etc/nginx/conf.d/ai-teacher-demo-site.conf
 
 # 若历史注入的 include 指向已删除文件导致 nginx -t 失败，先清理所有残留 include
 if ! sudo nginx -t 2>/dev/null; then
   echo "nginx unhealthy before site install; cleaning stale include lines"
   for f in $(sudo grep -Rl 'ai-teacher-demo-site.conf' /etc/nginx 2>/dev/null | grep -v '\.bak' || true); do
     sudo "$TOOL" --remove "$f" 'include /etc/nginx/conf.d/ai-teacher-demo-site.conf;' || true
+    sudo "$TOOL" --remove "$f" 'include /etc/nginx/ai-teacher-demo-site.conf;' || true
   done
   sudo nginx -t
 fi
@@ -38,7 +42,7 @@ test -n "$NGINX_SERVER_FILE"
 echo "nginx server file: $NGINX_SERVER_FILE"
 
 # 3) 幂等注入 include 到 server block
-sudo "$TOOL" "$NGINX_SERVER_FILE" 'include /etc/nginx/conf.d/ai-teacher-demo-site.conf;'
+sudo "$TOOL" "$NGINX_SERVER_FILE" 'include /etc/nginx/ai-teacher-demo-site.conf;'
 
 # 4) 安装 site conf 并 reload
 sudo install -m 0644 "$REMOTE_TMP/host/ai-teacher-demo-site.conf" "$SITE_CONF"
