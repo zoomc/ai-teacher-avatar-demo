@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""幂等地把一行 include 注入 zoomlab 的 nginx server block。
+"""把一行 include 幂等地注入/移出 zoomlab 的 nginx server block。
 
-用法: ensure-nginx-include.py <server_config_path> <include_line>
+用法:
+  ensure-nginx-include.py <server_config_path> <include_line>          # 注入
+  ensure-nginx-include.py --remove <server_config_path> <include_line> # 移除
 
-行为:
+注入行为:
 - 若 include_line 已存在于文件中 → 直接退出（幂等，重复部署安全）。
-- 否则定位包含 "server_name zoomlab.top" 的 server block，在其闭合
-  大括号前插入 include_line（括号配对，不受 location 块干扰）。
+- 否则定位包含 "server_name zoomlab.top" 的最后一个 server block
+  （且含 "listen 443"），在其闭合大括号前插入 include_line。
+
+移除行为:
+- 若 include_line 不存在 → 直接退出。
+- 否则删除该行及紧邻的多余空行。
 
 只读/只改目标 server 配置文件，不动其他 nginx 配置。
 """
@@ -39,16 +45,43 @@ def find_server_block_end(text: str, marker: str, ssl_marker: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: ensure-nginx-include.py <server_config_path> <include_line>", file=sys.stderr)
+    remove_mode = len(sys.argv) == 4 and sys.argv[1] == "--remove"
+    if remove_mode:
+        path, include_line = sys.argv[2], sys.argv[3]
+    elif len(sys.argv) == 3:
+        path, include_line = sys.argv[1], sys.argv[2]
+    else:
+        print(
+            "usage: ensure-nginx-include.py [--remove] <server_config_path> <include_line>",
+            file=sys.stderr,
+        )
         return 2
-    path, include_line = sys.argv[1], sys.argv[2]
 
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
 
-    if include_line.strip() in text:
-        print(f"already present: {include_line.strip()}")
+    line = include_line.strip()
+
+    if remove_mode:
+        if line not in text:
+            print("not present, nothing to remove")
+            return 0
+        lines = text.split("\n")
+        out = []
+        for idx, ln in enumerate(lines):
+            if ln.strip() == line:
+                # 跳过该行；并去掉它前面紧邻的空行
+                if out and out[-1].strip() == "":
+                    out.pop()
+                continue
+            out.append(ln)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(out))
+        print(f"removed from {path}: {line}")
+        return 0
+
+    if line in text:
+        print(f"already present: {line}")
         return 0
 
     try:
@@ -59,12 +92,12 @@ def main() -> int:
 
     # 保持缩进与结尾换行风格：在闭合大括号前插入
     indent = "    "
-    insert = "\n\n" + indent + include_line.strip() + "\n"
+    insert = "\n\n" + indent + line + "\n"
     text = text[:end] + insert + text[end:]
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
-    print(f"injected into {path}: {include_line.strip()}")
+    print(f"injected into {path}: {line}")
     return 0
 
 
