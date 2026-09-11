@@ -402,15 +402,20 @@ export class AvatarAdapter {
 
   // ---------------------------------------------------------------- Morph
 
-  /** VRM 模式：语义 → 实际 expression 名（对表达式列表做大小写不敏感匹配） */
+  /**
+   * VRM 模式：语义 → 表情预设短名（'happy' / 'aa' / 'blink' ...）。
+   * three-vrm v3 的 expressionManager.setValue/getValue 只接受短名：
+   * 内部会把短名与表达式名（可能为 'VRMExpression_happy' 等带前缀形式）做归一化匹配；
+   * 若传入长名会匹配失败（实测 getValue 返回 null）。
+   * 因此这里只做"表达式存在性"判断（大小写不敏感 + 前缀剥离），命中即返回短名。
+   */
   private vrmPresetFor(semantic: string): string | null {
     const preset = VRM_PRESET_MAP[semantic];
     if (!preset) return null;
     const names = this.vrmBlend?.expressions ?? [];
-    if (names.some((e) => e.name === preset)) return preset;
-    const lower = preset.toLowerCase();
-    const hit = names.find((e) => e.name.toLowerCase() === lower);
-    return hit ? hit.name : null;
+    const norm = (n: string) => n.toLowerCase().replace(/^vrmexpression_/, '');
+    const hit = names.find((e) => norm(e.name) === preset.toLowerCase());
+    return hit ? preset : null;
   }
 
   /** 按统一语义（可含别名）解析实际 morph 名；找不到返回 null */
