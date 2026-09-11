@@ -55,29 +55,29 @@ const BONE_PART_CANDIDATES: Record<BonePart, string[]> = {
   hips: ['hips', 'pelvis', 'hip'],
   spine: ['spine', 'spine0', 'chest0'],
   spine1: ['spine1', 'spine01', 'chest', 'upperchest'],
-  spine2: ['spine2', 'spine02', 'chest1'],
+  spine2: ['spine2', 'spine02', 'chest1', 'upperchest'],
   neck: ['neck'],
   head: ['head', 'headend', 'headtop'],
-  eyeL: ['lefteye', 'eyel', 'eyeleft'],
-  eyeR: ['righteye', 'eyer', 'eyeright'],
-  shoulderL: ['leftshoulder'],
-  armL: ['leftarm', 'upperarml'],
-  forearmL: ['leftforearm', 'lowerarml'],
-  handL: ['lefthand', 'handl'],
-  shoulderR: ['rightshoulder'],
-  armR: ['rightarm', 'upperarmr'],
-  forearmR: ['rightforearm', 'lowerarmr'],
-  handR: ['righthand', 'handr'],
-  thumbL: ['lefthandthumb1', 'thumbl1', 'thumb_l'],
-  indexL: ['lefthandindex1', 'indexl1', 'index_l'],
-  middleL: ['lefthandmiddle1', 'middlel1', 'middle_l'],
-  ringL: ['lefthandring1', 'ringl1', 'ring_l'],
-  pinkyL: ['lefthandpinky1', 'pinkyl1', 'pinky_l'],
-  thumbR: ['righthandthumb1', 'thumbr1', 'thumb_r'],
-  indexR: ['righthandindex1', 'indexr1', 'index_r'],
-  middleR: ['righthandmiddle1', 'middler1', 'middle_r'],
-  ringR: ['righthandring1', 'ringr1', 'ring_r'],
-  pinkyR: ['righthandpinky1', 'pinkyr1', 'pinky_r'],
+  eyeL: ['lefteye', 'eyel', 'eyeleft', 'jadjlfaceeye'],
+  eyeR: ['righteye', 'eyer', 'eyeright', 'jadjrfaceeye'],
+  shoulderL: ['leftshoulder', 'shoulder'],
+  armL: ['leftarm', 'upperarml', 'leftupperarm', 'upperarm'],
+  forearmL: ['leftforearm', 'lowerarml', 'leftlowerarm', 'lowerarm'],
+  handL: ['lefthand', 'handl', 'hand'],
+  shoulderR: ['rightshoulder', 'shoulder'],
+  armR: ['rightarm', 'upperarmr', 'rightupperarm', 'upperarm'],
+  forearmR: ['rightforearm', 'lowerarmr', 'rightlowerarm', 'lowerarm'],
+  handR: ['righthand', 'handr', 'hand'],
+  thumbL: ['lefthandthumb1', 'thumbl1', 'thumb_l', 'leftthumbproximal', 'leftthumbintermediate', 'leftthumbdistal', 'thumb1'],
+  indexL: ['lefthandindex1', 'indexl1', 'index_l', 'leftindexproximal', 'leftindexintermediate', 'leftindexdistal', 'index1'],
+  middleL: ['lefthandmiddle1', 'middlel1', 'middle_l', 'leftmiddleproximal', 'leftmiddleintermediate', 'leftmiddledistal', 'middle1'],
+  ringL: ['lefthandring1', 'ringl1', 'ring_l', 'leftringproximal', 'leftringintermediate', 'leftringdistal', 'ring1'],
+  pinkyL: ['lefthandpinky1', 'pinkyl1', 'pinky_l', 'leftlittleproximal', 'leftlittleintermediate', 'leftlittledistal', 'little1'],
+  thumbR: ['righthandthumb1', 'thumbr1', 'thumb_r', 'rightthumbproximal', 'rightthumbintermediate', 'rightthumbdistal', 'thumb1'],
+  indexR: ['righthandindex1', 'indexr1', 'index_r', 'rightindexproximal', 'rightindexintermediate', 'rightindexdistal', 'index1'],
+  middleR: ['righthandmiddle1', 'middler1', 'middle_r', 'rightmiddleproximal', 'rightmiddleintermediate', 'rightmiddledistal', 'middle1'],
+  ringR: ['righthandring1', 'ringr1', 'ring_r', 'rightringproximal', 'rightringintermediate', 'rightringdistal', 'ring1'],
+  pinkyR: ['righthandpinky1', 'pinkyr1', 'pinky_r', 'rightlittleproximal', 'rightlittleintermediate', 'rightlittledistal', 'little1'],
 };
 
 /**
@@ -148,8 +148,11 @@ const MORPH_ALIASES: Record<string, string[]> = {
 };
 
 export interface BoneRef {
-  bone: THREE.Bone;
+  /** 驱动目标骨骼节点（VRM 模式为 normalized bone；GLB 为模型骨骼） */
+  bone: THREE.Object3D;
   baseQuaternion: THREE.Quaternion;
+  /** 绑定姿态下的世界旋转（视线解算用，避免依赖骨骼局部轴假设） */
+  restWorldQuaternion: THREE.Quaternion;
 }
 
 export interface MorphRef {
@@ -165,9 +168,122 @@ export interface AvatarCapabilities {
   skeleton: THREE.Skeleton | null;
   hasOculusVisemes: boolean;
   hasFallbackVisemes: boolean;
+  /** true = 当前人物为 VRM 模型（preset 表情体系，如 A/I/U/E/O + Blink + Joy/Angry/Sorrow） */
+  isVrm: boolean;
 }
 
 const normName = (name: string) => name.replace(/[\s_\-.]/g, '').toLowerCase();
+
+/**
+ * 骨骼名归一化变体：除原名外，剥掉常见角色前缀（VRM 的 J_Bip_/J_Adj_ 系）
+ * 得到"裸名"，从而让统一骨位候选（head/neck/upperarm…）能匹配 J_Bip_C_Head 等。
+ */
+const BONE_NAME_VARIANTS = (name: string): string[] => {
+  const n = normName(name);
+  const out = [n];
+  for (const pre of ['jbipc', 'jbipl', 'jbipr', 'jadjc', 'jadjl', 'jadjr']) {
+    if (n.startsWith(pre)) {
+      out.push(n.slice(pre.length));
+      break;
+    }
+  }
+  return out;
+};
+
+/**
+ * 统一 Morph 语义 → VRM 表情预设名。
+ * three-vrm v3 把 VRM0 的 preset 归一为 VRM1 风格表达式名：
+ *   joy→happy、fun→relaxed、sorrow→sad、unknown→surprised、
+ *   a/i/u/e/o→aa/ih/ou/ee/oh、blink_l/blink_r→blinkLeft/blinkRight。
+ * 多语义映射到同一预设时由 setMorph 的帧内累加（pending）合并，避免后写覆盖。
+ */
+const VRM_PRESET_MAP: Record<string, string> = {
+  eyeBlinkLeft: 'blink',
+  eyeBlinkRight: 'blink',
+  eyesClosed: 'blink',
+  eyeWideLeft: 'surprised',
+  eyeWideRight: 'surprised',
+  eyeSquintLeft: 'happy',
+  eyeSquintRight: 'happy',
+  mouthSmile: 'happy',
+  mouthSmileLeft: 'happy',
+  mouthSmileRight: 'happy',
+  cheekPuff: 'relaxed',
+  mouthFrownLeft: 'angry',
+  mouthFrownRight: 'angry',
+  browDownLeft: 'angry',
+  browDownRight: 'angry',
+  mouthPressLeft: 'angry',
+  mouthPressRight: 'angry',
+  mouthPucker: 'ou',
+  mouthFunnel: 'ou',
+  jawOpen: 'aa',
+  mouthOpen: 'aa',
+  eyeLookUp: '',
+  eyeLookDown: '',
+  eyeLookLeft: '',
+  eyeLookRight: '',
+  viseme_aa: 'aa',
+  viseme_I: 'ih',
+  viseme_U: 'ou',
+  viseme_E: 'ee',
+  viseme_O: 'oh',
+  A: 'aa',
+  I: 'ih',
+  U: 'ou',
+  E: 'ee',
+  O: 'oh',
+  sil: '',
+};
+
+/** three-vrm v3：VRM0 与 VRM1 均归一为 VRMExpressionManager 接口 */
+interface VRMExpressionLike {
+  expressions?: Array<{ name: string }>;
+  setValue(name: string, value: number): void;
+  getValue(name: string): number | null;
+}
+
+export interface AvatarAdapterOptions {
+  animations?: THREE.AnimationClip[];
+  /** 传入 VRM 实例（@pixiv/three-vrm），启用 VRM preset 表情驱动 */
+  vrm?: unknown;
+}
+
+/**
+ * 统一骨位 → VRM 标准人体骨骼名（VRMHumanBoneName）。
+ * VRM 模型驱动必须走 normalized bones：three-vrm 的 humanoid.update()
+ * 每帧把 normalized 姿态复制到 raw 蒙皮骨骼，改 raw 会被覆盖。
+ */
+const VRM_BONE_MAP: Partial<Record<BonePart, string>> = {
+  hips: 'hips',
+  spine: 'spine',
+  spine1: 'chest',
+  spine2: 'upperChest',
+  neck: 'neck',
+  head: 'head',
+  eyeL: 'leftEye',
+  eyeR: 'rightEye',
+  shoulderL: 'leftShoulder',
+  armL: 'leftUpperArm',
+  forearmL: 'leftLowerArm',
+  handL: 'leftHand',
+  thumbL: 'leftThumbProximal',
+  indexL: 'leftIndexProximal',
+  middleL: 'leftMiddleProximal',
+  ringL: 'leftRingProximal',
+  pinkyL: 'leftLittleProximal',
+  shoulderR: 'rightShoulder',
+  armR: 'rightUpperArm',
+  forearmR: 'rightLowerArm',
+  handR: 'rightHand',
+  thumbR: 'rightThumbProximal',
+  indexR: 'rightIndexProximal',
+  middleR: 'rightMiddleProximal',
+  ringR: 'rightRingProximal',
+  pinkyR: 'rightLittleProximal',
+};
+
+/** 骨骼驱动目标（VRM 用 normalized bone；GLB 用模型 Bone） */
 
 export class AvatarAdapter {
   private bones = new Map<BonePart, BoneRef>();
@@ -176,10 +292,18 @@ export class AvatarAdapter {
   private skeleton: THREE.Skeleton | null = null;
   private animationClips: THREE.AnimationClip[] = [];
 
+  /** VRM 模式（vrm0 / vrm1）或 null（普通 GLB） */
+  private vrmMode: 'vrm0' | 'vrm1' | null = null;
+  private vrmBlend: VRMExpressionLike | null = null;
+  private vrmHumanoid: { getNormalizedBoneNode(name: string): THREE.Object3D | null } | null = null;
+  /** VRM 帧内待写 preset 权重（累加语义，避免多语义映射同 preset 时后写覆盖） */
+  private vrmPending = new Map<string, number>();
+
   private readonly tmpQ = new THREE.Quaternion();
 
-  constructor(root: THREE.Object3D, animationClips: THREE.AnimationClip[] = []) {
-    this.animationClips = animationClips;
+  constructor(root: THREE.Object3D, options: AvatarAdapterOptions = {}) {
+    this.animationClips = options.animations ?? [];
+    this.initVrm(options.vrm);
 
     // 1) 收集带 MorphTarget 的网格，并按统一语义建索引
     root.traverse((obj) => {
@@ -211,14 +335,52 @@ export class AvatarAdapter {
     if (this.skeleton) {
       for (const b of this.skeleton.bones) if (!bones.includes(b)) bones.push(b);
     }
+    const usedBones = new Set<THREE.Object3D>();
     for (const part of BONE_PARTS) {
-      const candidates = BONE_PART_CANDIDATES[part];
-      const hit = bones.find((b) => candidates.some((c) => normName(b.name) === c));
+      let hit: THREE.Object3D | undefined;
+      // VRM 优先走标准 humanoid normalized bones（驱动后由 humanoid.update 同步蒙皮）
+      if (this.vrmHumanoid) {
+        const vrmName = VRM_BONE_MAP[part];
+        const nb = vrmName ? this.vrmHumanoid.getNormalizedBoneNode(vrmName) : null;
+        if (nb && !usedBones.has(nb)) hit = nb;
+      }
+      if (!hit) {
+        const candidates = BONE_PART_CANDIDATES[part];
+        hit = bones.find(
+          (b) => !usedBones.has(b) && BONE_NAME_VARIANTS(b.name).some((v) => candidates.includes(v)),
+        );
+      }
       if (hit) {
+        usedBones.add(hit);
         hit.updateWorldMatrix(true, false);
-        this.bones.set(part, { bone: hit, baseQuaternion: hit.quaternion.clone() });
+        const restWorldQ = new THREE.Quaternion().setFromRotationMatrix(hit.matrixWorld);
+        this.bones.set(part, { bone: hit, baseQuaternion: hit.quaternion.clone(), restWorldQuaternion: restWorldQ });
       }
     }
+  }
+
+  /** 识别 VRM 实例（v3 中 VRM0 / VRM1 均暴露 expressionManager） */
+  private initVrm(vrm: unknown): void {
+    if (!vrm) return;
+    const v = vrm as {
+      blendShapeProxy?: VRMExpressionLike;
+      expressionManager?: VRMExpressionLike;
+      humanoid?: { getNormalizedBoneNode(name: string): THREE.Object3D | null };
+    };
+    if (v.blendShapeProxy) {
+      // three-vrm v2 兼容：0.x 的 BlendShapeProxy
+      this.vrmMode = 'vrm0';
+      this.vrmBlend = v.blendShapeProxy;
+    } else if (v.expressionManager) {
+      this.vrmMode = 'vrm1';
+      this.vrmBlend = v.expressionManager;
+    }
+    if (v.humanoid) this.vrmHumanoid = v.humanoid;
+  }
+
+  /** 当前是否为 VRM 模型 */
+  get isVrm(): boolean {
+    return this.vrmMode !== null;
   }
 
   private indexMorphs() {
@@ -240,8 +402,22 @@ export class AvatarAdapter {
 
   // ---------------------------------------------------------------- Morph
 
+  /** VRM 模式：语义 → 实际 expression 名（对表达式列表做大小写不敏感匹配） */
+  private vrmPresetFor(semantic: string): string | null {
+    const preset = VRM_PRESET_MAP[semantic];
+    if (!preset) return null;
+    const names = this.vrmBlend?.expressions ?? [];
+    if (names.some((e) => e.name === preset)) return preset;
+    const lower = preset.toLowerCase();
+    const hit = names.find((e) => e.name.toLowerCase() === lower);
+    return hit ? hit.name : null;
+  }
+
   /** 按统一语义（可含别名）解析实际 morph 名；找不到返回 null */
   resolveMorph(semantic: string): string | null {
+    if (this.vrmMode) {
+      return this.vrmPresetFor(semantic);
+    }
     const candidates = MORPH_ALIASES[semantic] ?? [semantic];
     for (const c of candidates) {
       if (this.morphs.has(c)) return c;
@@ -253,25 +429,52 @@ export class AvatarAdapter {
     return this.resolveMorph(semantic) !== null;
   }
 
-  /** 写入 morph 权重（0..1），自动钳制；写到所有包含该目标的网格 */
+  /**
+   * 写入 morph 权重（0..1），自动钳制；写到所有包含该目标的网格。
+   * VRM 模式：写入帧内 pending（按 preset 累加），由 flushMorphs() 一次性提交。
+   */
   setMorph(semantic: string, weight: number): void {
+    const w = Math.min(1, Math.max(0, weight));
+    if (this.vrmMode) {
+      const preset = this.vrmPresetFor(semantic);
+      if (!preset) return;
+      this.vrmPending.set(preset, Math.min(1, (this.vrmPending.get(preset) ?? 0) + w));
+      return;
+    }
     const actual = this.resolveMorph(semantic);
     if (!actual) return;
     const ref = this.morphs.get(actual)!;
-    const w = Math.min(1, Math.max(0, weight));
     for (let i = 0; i < ref.meshes.length; i++) {
       const influences = ref.meshes[i].morphTargetInfluences;
       if (influences) influences[ref.indices[i]] = w;
     }
   }
 
-  /** 当前实际 morph 名列表（模型原始名） */
+  /** 每帧末尾调用：把 VRM pending 权重提交到 blendShapeProxy / expressionManager */
+  flushMorphs(): void {
+    if (!this.vrmMode || !this.vrmBlend) return;
+    for (const [preset, w] of this.vrmPending) {
+      this.vrmBlend.setValue(preset, w);
+    }
+    this.vrmPending.clear();
+  }
+
+  /** 当前实际 morph 名列表（GLB 为模型原始名；VRM 为预设名） */
   get morphNames(): string[] {
+    if (this.vrmMode) {
+      const names = (this.vrmBlend?.expressions ?? []).map((e) => e.name);
+      return [...new Set([...names, ...Object.values(VRM_PRESET_MAP).filter(Boolean)])];
+    }
     return [...this.morphs.keys()];
   }
 
   /** 读取当前 morph 权重（读第一个包含该目标的网格；找不到返回 0） */
   getMorphWeight(semantic: string): number {
+    if (this.vrmMode) {
+      const preset = this.vrmPresetFor(semantic);
+      if (!preset || !this.vrmBlend) return 0;
+      return this.vrmBlend.getValue(preset) ?? 0;
+    }
     const actual = this.resolveMorph(semantic);
     if (!actual) return 0;
     const ref = this.morphs.get(actual)!;
@@ -279,13 +482,21 @@ export class AvatarAdapter {
     return influences ? influences[ref.indices[0]] : 0;
   }
 
-  /** 是否有完整 Oculus viseme 集 */
+  /** 是否有完整 Oculus viseme 集（VRM 的 A/I/U/E/O 视为等价） */
   get hasOculusVisemes(): boolean {
+    if (this.vrmMode) {
+      const names = this.morphNames.map((n) => n.toLowerCase());
+      return ['aa', 'ih', 'ou', 'ee', 'oh'].every((v) => names.includes(v));
+    }
     return ['viseme_aa', 'viseme_E', 'viseme_I', 'viseme_O', 'viseme_U'].every((v) => this.morphs.has(v));
   }
 
   /** 是否有 A/I/U/E/O 回退口型 */
   get hasFallbackVisemes(): boolean {
+    if (this.vrmMode) {
+      const names = this.morphNames.map((n) => n.toLowerCase());
+      return ['aa', 'ih', 'ou', 'ee', 'oh'].some((v) => names.includes(v));
+    }
     return ['A', 'I', 'U', 'E', 'O'].some((v) => this.morphs.has(v));
   }
 
@@ -345,6 +556,7 @@ export class AvatarAdapter {
       skeleton: this.skeleton,
       hasOculusVisemes: this.hasOculusVisemes,
       hasFallbackVisemes: this.hasFallbackVisemes,
+      isVrm: this.isVrm,
     };
   }
 }

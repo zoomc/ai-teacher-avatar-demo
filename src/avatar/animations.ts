@@ -118,6 +118,78 @@ export const GESTURE_POSES: Record<string, GesturePoseFn> = {
   encouraging: encouragingPose,
 };
 
+/**
+ * VRM 姿势表 —— 供 AvatarController({ poseSet: 'vrm' }) 使用。
+ * VRM 0.x 人物（VRoid 系）为直臂绑定，骨骼局部轴与 RPM/glTF 有差异：
+ *   - 上臂/前臂：绕局部 Z 正方向抬臂（armR 实测），左臂为镜像（负方向抬）；
+ *   - head rest 为 identity（局部欧拉 ≈ 世界轴），可复用 GLTF 表的头部角度；
+ *   - 手指（Index/Middle/Ring/Pinky Proximal）绕局部 X 弯曲。
+ * 本地预览调校后，动作方向异常只需改本表，业务逻辑与 AvatarAdapter 无需改动。
+ */
+
+/** Explain（VRM）：双臂抬起 40° 摊开讲解，前臂交替外摆 */
+export function explainPoseVRM(t: number): Pose {
+  const s = Math.sin(t * 2.3);
+  return {
+    rotations: {
+      armL: [0.05, 0.1, -0.7],
+      forearmL: [0.05, 0, -0.5 + s * 0.18],
+      armR: [0.05, -0.1, 0.7],
+      forearmR: [0.05, 0, 0.5 + s * 0.18],
+      head: [0.045, 0, 0],
+    },
+    morphs: { browInnerUp: 0.28, mouthSmile: 0.22 },
+  };
+}
+
+/** Thinking Pose（VRM）：右手托腮思考，头微倾 */
+export function thinkingPoseVRM(): Pose {
+  return {
+    rotations: {
+      spine2: [-0.035, 0, 0],
+      armR: [0.05, 0.5, 0.8],
+      forearmR: [0.1, 0, 0.5],
+      handR: [-0.2, 0, 0.1],
+      indexR: [0.35, 0, 0.1],
+      head: [0.12, -0.18, -0.14],
+    },
+    morphs: {
+      browInnerUp: 0.6,
+      browDownLeft: 0.25,
+      browDownRight: 0.2,
+      mouthPressLeft: 0.3,
+      mouthPressRight: 0.3,
+    },
+  };
+}
+
+/** Encouraging（VRM）：右臂抬起握拳鼓励 + 轻微侧摆 */
+export function encouragingPoseVRM(t: number): Pose {
+  const s = Math.sin(t * 2.6) * 0.07;
+  return {
+    rotations: {
+      spine1: [0, s * 0.5, 0],
+      armR: [0.05, 0.18, 1.1],
+      forearmR: [0.1, 0, 0.8],
+      handR: [0, 0.12, 0.08],
+      indexR: [0.6, 0, 0.08],
+      middleR: [0.6, 0, 0.08],
+      ringR: [0.6, 0, 0.08],
+      pinkyR: [0.6, 0, 0.08],
+      head: [0.04, s, 0],
+    },
+    morphs: { mouthSmile: 0.55, browInnerUp: 0.3, browOuterUpLeft: 0.18, browOuterUpRight: 0.18 },
+  };
+}
+
+export const GESTURE_POSES_VRM: Record<string, GesturePoseFn> = {
+  idle: idlePose,
+  wave: wavePose,
+  explain: explainPoseVRM,
+  thinkingPose: thinkingPoseVRM,
+  encouraging: encouragingPoseVRM,
+};
+
 /** 空姿态（用于无动作时的兜底） */
 export function emptyPose(): Pose {
   return { rotations: NO_ROT };

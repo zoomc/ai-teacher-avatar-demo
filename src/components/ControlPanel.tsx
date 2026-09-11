@@ -114,9 +114,10 @@ export function ControlPanel({ controller, caps, logs }: Props) {
         <h2>模型能力（自动探测）</h2>
         {caps ? (
           <ul className="caps-list">
+            <li>人物类型：{caps.isVrm ? 'VRM（表情预设体系）' : 'GLB（MorphTarget 体系）'}</li>
             <li>骨骼关节（统一骨位）：{caps.boneParts.length}</li>
-            <li>MorphTarget：{caps.morphNames.length}</li>
-            <li>Oculus Viseme：{caps.hasOculusVisemes ? '✓ 完整' : '✗（使用 A/I/U/E/O 回退）'}</li>
+            <li>{caps.isVrm ? '表情预设' : 'MorphTarget'}：{caps.morphNames.length}</li>
+            <li>口型（A/I/U/E/O）：{caps.hasFallbackVisemes ? '✓ 可用' : '✗ 缺失'}</li>
             <li>AnimationClip：{caps.animationNames.length > 0 ? caps.animationNames.join(', ') : '无（程序化驱动）'}</li>
           </ul>
         ) : (

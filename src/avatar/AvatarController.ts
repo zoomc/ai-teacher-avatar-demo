@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { AvatarAdapter, BonePart } from './AvatarAdapter';
 import { VisemeTimeline } from './VisemeTimeline';
-import { GESTURE_POSES, Pose, emptyPose } from './animations';
+import { GESTURE_POSES, GESTURE_POSES_VRM, Pose, emptyPose, GesturePoseFn } from './animations';
 import { createTalkDemo } from './talkDemo';
 import { AvatarCommand, Emotion, Gesture, LookTarget, VisemeEvent } from './types';
 
@@ -85,8 +85,15 @@ const DAMP_RATE = 7.5; // 情绪/手势平滑速率（每秒）
 const LOOK_RATE = 9;
 const LOOK_WEIGHT_RATE = 8;
 
+export interface AvatarControllerOptions {
+  /** 姿势表：gltf（RPM 风格，T-Pose）或 vrm（VRM 0.x，A/T-Pose 直臂绑定） */
+  poseSet?: 'gltf' | 'vrm';
+}
+
 export class AvatarController {
   readonly adapter: AvatarAdapter;
+
+  private poseTable: Record<string, GesturePoseFn>;
 
   private emotionWeights: Record<Emotion, number> = {
     neutral: 1,
@@ -157,8 +164,9 @@ export class AvatarController {
   private tmpV6 = new THREE.Vector3();
   private tmpQ1 = new THREE.Quaternion();
 
-  constructor(adapter: AvatarAdapter) {
+  constructor(adapter: AvatarAdapter, options: AvatarControllerOptions = {}) {
     this.adapter = adapter;
+    this.poseTable = options.poseSet === 'vrm' ? GESTURE_POSES_VRM : GESTURE_POSES;
   }
 
   // ------------------------------------------------------------ 公共 API
@@ -441,7 +449,18 @@ export class AvatarController {
     const dirWorld = this.tmpV2.copy(target).sub(origin).normalize();
     const dirLocal = this.tmpV3.copy(dirWorld).applyQuaternion(parentQ);
 
-    // 用绑定姿态的三个基向量计算 yaw/pitch（与模型朝向无关）
+    // 用绑定姿态的三个基向量计算 yaw/pitch（与模型朝向无关）。
+    // VRM normalized bones 的 rest quaternion 与 RPM 不同，局部轴基向量法会串位，
+    // 改按 rest 世界旋转的基向量（默认 -Z 为前方，three.js 渲染惯例）在世界空间解算。
+    if (this.adapter.isVrm) {
+      const rq = ref.restWorldQuaternion;
+      const fwd = this.tmpV4.set(0, 0, -1).applyQuaternion(rq);
+      const right = this.tmpV5.set(1, 0, 0).applyQuaternion(rq);
+      const up = this.tmpV6.set(0, 1, 0).applyQuaternion(rq);
+      const yaw = Math.atan2(dirWorld.dot(right), dirWorld.dot(fwd));
+      const pitch = Math.asin(Math.min(1, Math.max(-1, dirWorld.dot(up))));
+      return { yaw, pitch };
+    }
     const q = ref.baseQuaternion;
     const fwd = this.tmpV4.set(0, 0, 1).applyQuaternion(q);
     const right = this.tmpV5.set(1, 0, 0).applyQuaternion(q);
@@ -465,11 +484,11 @@ export class AvatarController {
       const w = this.gestureWeights[g];
       if (w <= 0.004) continue;
       otherSum += w;
-      this.accumPose(accum, GESTURE_POSES[g](this.time), w);
+      this.accumPose(accum, this.poseTable[g](this.time), w);
     }
     const idleWeight = Math.min(1, Math.max(0, 1 - otherSum));
     if (idleWeight > 0.004) {
-      this.accumPose(accum, GESTURE_POSES.idle(this.time), idleWeight);
+      this.accumPose(accum, this.poseTable.idle(this.time), idleWeight);
     }
 
     // 2) 情绪附加姿态
@@ -515,7 +534,7 @@ export class AvatarController {
     for (const g of GESTURES) {
       const w = this.gestureWeights[g];
       if (w <= 0.004) continue;
-      const pose = GESTURE_POSES[g](this.time);
+      const pose = this.poseTable[g](this.time);
       if (pose.morphs) {
         for (const [m, v] of Object.entries(pose.morphs)) {
           addMorph(m, v * w * this.intensity);
